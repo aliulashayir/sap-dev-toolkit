@@ -1,19 +1,18 @@
-# SAP OData / RAP / Cloud SDK integration — Claude Code plugin
+# sap-dev-toolkit — SAP OData / RAP / Cloud SDK toolkit for Claude Code
 
-A Claude Code plugin that packages a battle-tested **skill** for integrating a
-frontend/BFF with **SAP OData V4** services built on **RAP** (ABAP RESTful
-Application Programming Model, typically S/4HANA Public Cloud) via the **SAP
-Cloud SDK for JavaScript**, and binding the result into a **UI5/Fiori** frontend.
+A Claude Code plugin for building against **SAP OData V4** services built on **RAP**
+(ABAP RESTful Application Programming Model, typically S/4HANA Public Cloud) via the
+**SAP Cloud SDK for JavaScript**, and binding the result into a **UI5/Fiori** frontend.
 
-It front-loads the gotchas that otherwise cost a debugging session each — reading
-`$metadata`, RAP write semantics, the Cloud SDK error/pagination/CSRF details, UI
-binding at the type boundary, and a symptom → cause → fix table for the common
-400/404/412 failures.
+It bundles a battle-tested skill, slash commands, specialized agents, and an advisory
+hook — front-loading the gotchas that otherwise cost a debugging session each: reading
+`$metadata`, RAP write semantics, the Cloud SDK error/pagination/CSRF details, UI binding
+at the type boundary, and a symptom → cause → fix map for the common 400/404/412 failures.
 
 ## What's inside
 
-```
-plugins/sap-odata-rap-integration/
+```text
+plugins/sap-dev-toolkit/
 ├── skills/sap-odata-rap-integration/
 │   ├── SKILL.md                      # the playbook (7 rules + error→fix table + workflow)
 │   └── references/
@@ -54,22 +53,22 @@ on relevant files and no-ops silently otherwise (and if `jq` isn't installed). B
 
 ## Install
 
-```
-/plugin marketplace add CHANGE-ME/sap-odata-rap-integration-plugin
-/plugin install sap-odata-rap-integration@sap-odata-rap
+```text
+/plugin marketplace add aliulashayir/sap-dev-toolkit
+/plugin install sap-dev-toolkit@sap-dev-tools
 ```
 
 The first line registers this repo as a marketplace (`CHANGE-ME` → your GitHub
-`owner/repo`); the second installs the plugin from it. Update later with
-`/plugin marketplace update sap-odata-rap`.
+`owner/repo`); the second installs the plugin from the `sap-dev-tools` catalog. Update
+later with `/plugin marketplace update sap-dev-tools`.
 
 ## Extending it
 
-Components live under `plugins/sap-odata-rap-integration/` and are auto-discovered by
-Claude Code — add more `commands/*.md`, `agents/*.md`, another skill under `skills/`, or
-extra events in `hooks/hooks.json`. See the
+Components live under `plugins/sap-dev-toolkit/` and are auto-discovered by Claude Code —
+add more `commands/*.md`, `agents/*.md`, another skill under `skills/`, or extra events in
+`hooks/hooks.json`. See the
 [Claude Code plugins reference](https://code.claude.com/docs/en/plugins-reference).
 
 ## License
 
-MIT — see [LICENSE](./LICENSE). Change if your team needs a different one.
+MIT — see [LICENSE](./LICENSE).

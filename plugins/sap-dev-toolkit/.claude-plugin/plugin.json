@@ -1,0 +1,12 @@
+{
+  "name": "sap-dev-toolkit",
+  "version": "0.1.0",
+  "description": "SAP OData V4 / RAP / Cloud SDK developer toolkit for Claude Code — a skill (integration playbook + references), slash commands ($metadata mapping, error debugging, value-help scaffolding), specialized subagents (metadata analysis, integration review), and an advisory hook for surfacing real OData errors.",
+  "author": {
+    "name": "Ali Ulaş Hayır",
+    "email": "aliulashayir@gmail.com"
+  },
+  "repository": "https://github.com/aliulashayir/sap-dev-toolkit",
+  "license": "MIT",
+  "keywords": ["sap", "odata", "rap", "cloud-sdk", "ui5", "fiori", "s4hana", "btp"]
+}
