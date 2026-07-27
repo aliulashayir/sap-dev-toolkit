@@ -1,0 +1,15 @@
+{
+  "name": "sap-odata-rap",
+  "owner": {
+    "name": "Solvia",
+    "email": "ali.hayir@solviads.com"
+  },
+  "description": "SAP OData V4 / RAP / Cloud SDK integration tooling for Claude Code.",
+  "plugins": [
+    {
+      "name": "sap-odata-rap-integration",
+      "source": "./plugins/sap-odata-rap-integration",
+      "description": "Playbook + references for integrating a frontend/BFF with SAP OData V4 (RAP) via the SAP Cloud SDK for JavaScript, and binding into UI5/Fiori."
+    }
+  ]
+}
