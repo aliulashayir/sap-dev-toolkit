@@ -14,18 +14,43 @@ binding at the type boundary, and a symptom → cause → fix table for the comm
 
 ```
 plugins/sap-odata-rap-integration/
-└── skills/sap-odata-rap-integration/
-    ├── SKILL.md                      # the playbook (7 rules + error→fix table + workflow)
-    └── references/
-        ├── odata-metadata.md         # reading $metadata / annotations
-        ├── rap-write-semantics.md    # POST/PATCH/DELETE, composite keys, semantic pairing
-        ├── cloud-sdk-bff.md          # Cloud SDK, error extraction, pagination, CSRF, auth
-        ├── ui-binding.md             # type boundary, value-helps, validation
-        └── advanced-topics.md        # drafts, $batch, $expand, actions/functions
+├── skills/sap-odata-rap-integration/
+│   ├── SKILL.md                      # the playbook (7 rules + error→fix table + workflow)
+│   └── references/
+│       ├── odata-metadata.md         # reading $metadata / annotations
+│       ├── rap-write-semantics.md    # POST/PATCH/DELETE, composite keys, semantic pairing
+│       ├── cloud-sdk-bff.md          # Cloud SDK, error extraction, pagination, CSRF, auth
+│       ├── ui-binding.md             # type boundary, value-helps, validation
+│       └── advanced-topics.md        # drafts, $batch, $expand, actions/functions
+├── commands/                         # slash commands (see below)
+├── agents/                           # subagents (see below)
+├── hooks/hooks.json                  # PostToolUse advisory hook
+└── scripts/check-odata-error-handling.sh
 ```
 
-The skill triggers automatically when Claude is working on SAP OData/RAP/Cloud SDK
-integration — or invoke it explicitly with `/sap-odata-rap-integration`.
+### Skill
+
+`sap-odata-rap-integration` triggers automatically when Claude is working on SAP
+OData/RAP/Cloud SDK integration — or invoke it explicitly with `/sap-odata-rap-integration`.
+
+### Commands
+
+- **`/odata-metadata-map [path|url]`** — parse a `$metadata` (EDMX) into a field map + integration watch-list.
+- **`/odata-debug [error]`** — walk the error→cause→fix map for an SAP OData/RAP/Cloud SDK failure (surfaces the real error first).
+- **`/odata-value-help [EntitySet]`** — scaffold a value-help end to end (paginated BFF route + hook + filterable ComboBox).
+
+### Agents
+
+- **`odata-metadata-analyst`** — read-only; ingests a `$metadata` doc and returns a structured field map + watch-list. Use before wiring a new entity.
+- **`odata-integration-reviewer`** — reviews integration code against the known footguns (swallowed errors, type-boundary bugs, keys in PATCH bodies, unpaired unit/currency, unfollowed pagination, mutable keys). Use before committing.
+
+### Hook
+
+A **PostToolUse** hook (`Write|Edit`) that emits a **non-blocking** advisory when an edited
+file makes raw SAP OData / Cloud SDK calls but appears to surface `err.message` (the useless
+"Request failed with status code 400") without extracting the real OData error. It fires only
+on relevant files and no-ops silently otherwise (and if `jq` isn't installed). Being
+`command`-type, it runs code, so under project scope it loads only after the trust prompt.
 
 ## Install
 
@@ -38,17 +63,12 @@ The first line registers this repo as a marketplace (`CHANGE-ME` → your GitHub
 `owner/repo`); the second installs the plugin from it. Update later with
 `/plugin marketplace update sap-odata-rap`.
 
-## Adding hooks / commands / agents later
+## Extending it
 
-This plugin currently ships only a skill. To extend it, drop components into the
-plugin directory (`plugins/sap-odata-rap-integration/`) — Claude Code
-auto-discovers them:
-
-- `hooks/hooks.json` — event hooks (PreToolUse, PostToolUse, etc.)
-- `commands/*.md` — slash commands
-- `agents/*.md` — subagents
-
-See the [Claude Code plugins reference](https://code.claude.com/docs/en/plugins-reference).
+Components live under `plugins/sap-odata-rap-integration/` and are auto-discovered by
+Claude Code — add more `commands/*.md`, `agents/*.md`, another skill under `skills/`, or
+extra events in `hooks/hooks.json`. See the
+[Claude Code plugins reference](https://code.claude.com/docs/en/plugins-reference).
 
 ## License
 
