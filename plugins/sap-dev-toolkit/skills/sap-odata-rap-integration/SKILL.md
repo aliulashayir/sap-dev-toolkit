@@ -148,6 +148,16 @@ Read the one that matches what you're doing. Each is self-contained.
   Select), locking keys in edit mode, and pre-submit validation mirroring the
   metadata constraints.
 
+- **`references/abap-cloud-rap-provider.md`** — The other side of the wire: when
+  **you** write the RAP service in developer extensibility (embedded steampunk).
+  Release contracts (`Use in Cloud Development`), custom entities + query
+  providers (`FETCH API (direct DB access) is not supported`), behavior
+  definitions on custom entities, raising errors out of a query provider,
+  enforced paging, static vs. instance actions, the four-object outbound
+  communication chain, HTTP client leaks, and reading failures that came back
+  through CPI (the MPL ID). Read before designing an S/4HANA Public Cloud custom
+  report or an outbound call from ABAP.
+
 - **`references/advanced-topics.md`** — Less-common, high-surprise areas: draft-
   enabled RAP entities (`IsActiveEntity`, Edit/Activate/Discard lifecycle — a plain
   POST only makes a draft!), `$batch` with transactional changesets, `$expand`
