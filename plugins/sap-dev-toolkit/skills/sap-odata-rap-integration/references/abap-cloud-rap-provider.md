@@ -101,20 +101,42 @@ Raising is the only way to abort a query, and it produces HTTP 500 — so put a
 real message class behind it. The alternative (returning an empty table) is
 worse: the user cannot tell "no data" from "the backend is down".
 
-## 6. Paging is enforced — you cannot return everything
+## 6. Paging is enforced — but you can raise the page size the FE asks for
 
 ```abap
 DATA(lv_page_size) = io_request->get_paging( )->get_page_size( ).
 ```
 
-Returning more rows than requested dumps with
-`CX_RAP_QUERY_PAGE_SIZE_OVERRUN` — *"Query implementation returned too many
-records"*. "Load it all in one go" is a frontend decision, not something the
-provider can force.
+Returning more rows than *requested* dumps with `CX_RAP_QUERY_PAGE_SIZE_OVERRUN`
+— *"Query implementation returned too many records"*. The provider can never
+hand back more than the current request's `$top`; that ceiling is not
+negotiable from the provider side, no matter where the data came from (live
+call, cache, staging table — doesn't matter, the limit is per-response, not
+per-data-source).
 
-Consequence for actions: do not design around Fiori's *Select All*, which only
-covers loaded rows anyway. Have the action derive its scope from **one** key and
-rebuild the full set server-side (see §8).
+What you *can* do is make the frontend ask for more in its first request, so
+the growing table never needs a second round-trip. On the **custom entity
+itself** (not the metadata extension — annotation is ignored there for this
+one) put:
+
+```abap
+@UI.presentationVariant: [{ maxItems: 500, visualizations: [{ type: #AS_LINEITEM }] }]
+define root custom entity ZC_MY_REPORT
+```
+
+This raised the FE's initial `$top` to 500 and the scroll-to-load-more step
+disappeared entirely for a ~450-row report — one request, one response, done.
+Two things this does *not* do: it does not lift the overrun ceiling (asking for
+1000 rows the provider can't supply within `maxItems` still dumps), and it does
+not make the underlying `SELECT`/API call any cheaper — if the query itself is
+slow, `maxItems` just moves the wait from "look for a scrollbar" to "wait for
+the first draw."
+
+Consequence for actions regardless: do not design around Fiori's *Select All*,
+which only ever covers rows already loaded into the table. Have the action
+derive its scope from **one** row's key and rebuild the full set server-side
+(see §8) — that way the number of rows selected, or even loaded, never affects
+what actually gets processed.
 
 ## 7. Sorting silently does nothing if you skip `to_upper`
 
