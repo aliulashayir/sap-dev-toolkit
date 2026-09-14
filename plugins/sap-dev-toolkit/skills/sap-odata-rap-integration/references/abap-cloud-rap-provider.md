@@ -271,3 +271,105 @@ session cookie travels with it.
   objects for an hour.
 - **Republish the service binding** after changing an entity. Metadata is cached;
   the old shape survives an activation and you debug a fixed bug.
+
+## 13. "Query not fully covered" — a 501 that looks like empty data
+
+RAP requires the provider to **handle every feature of the request**, not merely
+return rows. If the request carries `$orderby` and you never call
+`io_request->get_sort_elements( )`, RAP rejects the whole call:
+
+```
+HTTP 501   RAP_RUNTIME/004
+Query not fully covered by implementation:
+Call to method if_rap_query_request~get_sort_elements missing
+```
+
+Fiori Elements renders that as **"No data"** — visually identical to an empty
+result set. That mislabeling cost a full debugging session: the debugger showed
+four rows in the internal table with `set_data( )` about to execute. The data was
+fine; the response never reached the frontend.
+
+Handle all of these in *every* provider, including a four-row value help:
+
+- `get_sort_elements( )` → build `abap_sortorder_tab`, `SORT ... BY (tab)`
+- `get_filter( )->get_as_ranges( )` inside `TRY`, catching `cx_rap_query_filter_no_range`
+- paging: `get_paging( )` → offset trim + page-size trim
+- `is_total_numb_of_rec_requested( )` → `set_total_number_of_records( )`
+- search: implement it, or put `@Search.searchable: false` on the entity so
+  `$search` is never sent — the cheapest way to not implement a feature
+
+Rule of thumb: **every `get_*` you don't call is a latent 501.** Copy the whole
+block when you write a new provider; the one you skip is the one the framework
+asks for.
+
+## 14. Domain fixed values do not give you an F4 in OData V4
+
+In classic SAP GUI a domain's fixed values produce a value help for free. In
+RAP/OData V4 they do not — Fiori Elements builds value help from the `ValueList`
+annotation in `$metadata`, and domain fixed values never get there.
+
+What you actually need:
+
+1. A value help entity. For a handful of constant values a custom entity whose
+   query provider returns them hard-coded is the least work — `DD07L` is not
+   released in ABAP Cloud, so do not try to read the domain at runtime.
+2. `@Consumption.valueHelpDefinition: [{ entity: { name: 'ZC_..._VH', element: 'Code' } }]`
+   on the consuming field — on the **entity (Data Definition)**, not the metadata
+   extension. In an MDE it produces a parser error at the annotation's colon.
+3. `expose ZC_..._VH;` in the **service definition**. Skip this and the entity is
+   absent from `$metadata`; the F4 fails silently, with no error anywhere.
+4. Republish the service binding.
+
+`@ObjectModel.resultSet.sizeCategory: #XS` makes FE render a dropdown instead of
+opening a value-help dialog.
+
+FE calls value help through a **separate F4 service**, which is how you recognize
+the request in the network tab:
+
+```
+.../odata4/sap/<binding>/srvd_f4/sap/<vh_entity>/0001;ps='srvd-<service>-0001';va='...<field>'/$batch
+```
+
+Seeing that URL with `200 OK` means the wiring is right — any remaining failure
+is inside the batch payload (see §13; a 501 hides in there and shows as "No data").
+
+**Chicken and egg:** the entity names the class in `@ObjectModel.query.implementedBy`
+while the class types its table off the entity. Neither activates first. Activate
+the class with an empty body (`METHOD if_rap_query_provider~select. RETURN. ENDMETHOD.`),
+activate the entity, then fill the class in.
+
+## 15. ABAP syntax rules that only bite in provider code
+
+- **Inline `TYPE c LENGTH n` is illegal in a method signature.** Valid in `DATA`,
+  `CONSTANTS` and structure components; not in `IMPORTING`/`RETURNING`. Declare a
+  named type (`TYPES ty_quarter TYPE c LENGTH 2.`) and use that. The error text
+  is unhelpful: `Unable to interpret "2"`.
+- **Parameter blocks have a fixed order:** `IMPORTING → EXPORTING → CHANGING →
+  RETURNING → RAISING`. Writing `RETURNING` before `EXPORTING` gives
+  `"." , "RAISING", "OPTIONAL" ... expected after TY_X` — an error that points at
+  the type, not at the ordering.
+- **`RETURNING` + `EXPORTING` on the same method blocks functional calls.**
+  `DATA(x) = cls=>m( ... )` is rejected; you need the procedural form with
+  `RECEIVING`. Usually the better fix is to drop `EXPORTING` and return one
+  structure — the call sites stay readable and the signature stops being fragile.
+
+## 16. Leading zeros: NUMC re-pads what you just stripped
+
+`SHIFT lv LEFT DELETING LEADING '0'` does nothing visible on a NUMC (`n`) field.
+The type cannot hold a blank, so the gap opened on the right refills with `'0'`
+immediately. Convert first, then shift:
+
+```abap
+DATA(lv_code) = CONV string( ls_row-some_numc_field ).
+SHIFT lv_code LEFT DELETING LEADING '0'.
+```
+
+The same trap waits at the *other* end: if the structure you append into declares
+that field as NUMC, the cleaned value is re-padded on assignment and the JSON
+payload ships `0000010001` again. Both the working variable **and** the target
+field have to be plain character types.
+
+Where this hurts: a CDS view's element type is inherited from DDIC, so
+`VALUE i_glaccountinchartofaccounts-corporategroupaccount( ... )` hands you NUMC
+without saying so. Check the type of the intermediate variable, not just the
+entity field you can see in the CDS source.
