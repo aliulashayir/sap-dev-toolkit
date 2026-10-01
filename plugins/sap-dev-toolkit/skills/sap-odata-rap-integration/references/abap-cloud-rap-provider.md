@@ -998,3 +998,179 @@ only shows up when somebody picks the wrong one.
 
 Check for this annotation first whenever an F4 fails to appear. It is a one-line
 cause with no diagnostic, and it looks nothing like a value help problem.
+
+---
+
+## 38. Exposing an existing DDIC table: four CDS rules that only fail at runtime
+
+Putting a CDS view over a classic table and publishing it as OData V4 looks
+trivial. Four things fail *after* activation, three of them on live data only.
+
+**`DATS` must not be exposed as `Edm.Date`.** ABAP's initial date is `'00000000'`,
+which is not a valid `Edm.Date`. On a `NOT NULL` column, **one** empty row makes
+the service return 500 for the *whole* response — not a null field, not a skipped
+row. The response is fine in DEV and 500s in production the first time an
+un-filled date appears.
+
+```abap
+key cast( cdate as abap.char( 8 ) ) as Cdate
+```
+
+The cost moves to the consumer: filters are now quoted string comparisons
+(`Cdate ge '20260901'`). Flag it on the entity contract so every call site
+agrees — see `read-only-consumption.md` §5.
+
+**`UNIT` / `CUKY` fields need their semantic partner or a cast.** Exposed bare,
+activation fails asking for the reference field. If you only need the code,
+`left( geweihdr, 3 )` detaches it from the semantic check.
+
+**`@AbapCatalog.sqlViewName` is capped at 16 characters.** It is not truncated
+silently — activation fails — but the error names the annotation, not the length,
+so it reads as a syntax problem.
+
+**Do not put `WHERE` in the view.** Filtering to error rows at the view level is
+tempting and wrong if the consumer needs to know whether a failure was *later
+resolved*: that judgement needs the success rows too. Expose everything; let the
+consumer decide. A view that pre-filters forces a second view the day the rule
+changes.
+
+---
+
+## 39. Reading an INDX cluster table (`EXPORT/IMPORT ... TO/FROM DATABASE`)
+
+Some SAP logging frameworks store the interesting part — the parameters a failed
+function was called with — in an **INDX-type cluster table**. The payload is a
+serialized ABAP blob. There is no SQL view over it, no CDS, no join. `SELECT`
+returns the raw cluster columns and nothing usable.
+
+The only way out is a **custom entity + query provider** (§3) whose `select`
+does an `IMPORT`:
+
+```abap
+IMPORT pr = lt_params FROM DATABASE zxx_log_cluster(ab) ID ls_key
+       ACCEPTING PADDING
+       ACCEPTING TRUNCATION.
+```
+
+Five rules, each discovered the expensive way:
+
+**The structure you import into must be the one that was exported.** Frameworks
+often ship near-identical structures — a "normal" one and a `_M` ("memory")
+variant. The one written to the cluster is the variant **without reference
+types**: `EXPORT` cannot serialize `REF TO DATA`, so the persisted row type is
+the one whose value field is a plain string (often JSON). Picking the wrong twin
+gives a conversion dump, not a readable error.
+
+Confirm by size, don't guess: `IMPORT DIRECTORY INTO` gives the stored object's
+length; compare it against the candidate structures.
+
+**The class must be `Standard ABAP`, not `ABAP Cloud`.** `IMPORT ... FROM
+DATABASE` is not released for the Cloud language version. Set the class's ABAP
+language version explicitly; the syntax error otherwise names the statement, not
+the language version, and looks like a typo.
+
+**`ACCEPTING PADDING` and `ACCEPTING TRUNCATION` are what you want.**
+`IGNORING STRUCTURE BOUNDARIES` **cannot be combined with either** — ABAP
+Keyword Documentation, IMPORT addition 5: *"You cannot use this addition with
+either addition 3 (enlarge structure) or addition 4 (shorten structure)."*
+Adding all three is a natural reflex and fails at syntax check.
+
+**Refuse an unfiltered read.** Without a key, "read the cluster" means "import
+every blob in the table". Check `get_filter( )` for the key you need and raise a
+clean error (§5) when it is missing. The naive version produces a short dump
+under load — the framework asks for a count, your provider tries to materialize
+everything.
+
+**Scalars come back wrapped.** If the framework serializes values as JSON, a
+scalar is `"2000"`, not `2000`. The consumer must parse every value, including
+the ones that look primitive — a `JSON.parse` that is only applied to things that
+"look like" objects will miss them.
+
+---
+
+## 40. Publishing a service binding writes a *customizing* request
+
+Activating the CDS views and the service definition produces **workbench**
+entries. Clicking **Publish** on the service binding produces a **customizing**
+entry — a different request, often a different task list.
+
+Transport only the workbench request and the target system ends up with the
+objects present and the **service group empty**: `$metadata` either 404s or comes
+back without your entity sets. It looks like the binding failed to activate.
+
+Checklist when a service works in DEV and not in QA/PROD:
+
+1. Is the entity in the **service definition**'s `expose` list, in the *active*
+   version? The URI segment is the alias if you gave one, otherwise the CDS name.
+   A mismatch is `/IWCOR/CX_OD_URI_NOT_MATCHING` — "Resource not found for
+   segment 'X'" — which reads as a missing object and is actually a missing
+   `expose`.
+2. Did **both** requests transport?
+3. Still stale? Clear the gateway metadata cache (`/IWBEP/CACHE_CLEANUP`) in the
+   target system.
+
+Diagnose by response, not by guesswork: `$metadata` **200** plus entity **404**
+means the service is fine and the entity is not exposed. `$metadata` 404 means
+the binding is not published. (403 is §24 — the service exists, the user doesn't
+have it.)
+
+---
+
+## 41. OData V4 authorization is `S_START`, not `S_SERVICE`
+
+`S_SERVICE` is the OData **V2** authorization object. A V4 service group is
+checked through `S_START`:
+
+| Field | Value |
+|---|---|
+| `AUTHPGMID` | `R3TR` |
+| `AUTHOBJTYP` | `G4BA` |
+| `AUTHOBJNAM` | the **service group** name |
+
+Two things that cost time:
+
+- **The check is at service-group level**, not per service. Granting the service
+  name does nothing.
+- **Do not type the values into the role.** They are derived from the PFCG role
+  menu when the service group is added to it (SAP KBA 3058151). Hand-typed values
+  look right in PFCG and don't authorize.
+
+Symptom of getting this wrong is a clean **403** on the entity read while
+`$metadata` may still answer — which, combined with §31, is why it pays to probe
+both URLs separately before blaming either side.
+
+---
+
+## 42. One union view beats two lookup views
+
+When a consumer needs existence checks against two master-data objects (material
+*and* supplier, say), the instinct is two views and two calls.
+
+A single view with a discriminator column is strictly better:
+
+```abap
+define view ZXX_DDL_MD_CHK as
+  select from I_Product
+  { key cast( 'M'      as abap.char( 1 ) )  as ObjType,
+    key cast( Product  as abap.char( 40 ) ) as ObjKey }
+union all
+  select from I_Supplier
+  { key cast( 'S'      as abap.char( 1 ) )  as ObjType,
+    key cast( Supplier as abap.char( 40 ) ) as ObjKey }
+```
+
+One transport, one `expose`, one round trip through the Cloud Connector instead
+of two. Expose **only the key columns** — this answers "does it exist", and
+nothing else should leave the system.
+
+Two cautions:
+
+- **`union all` ordering is not a contract.** `$top=1` returns a row from the
+  first branch; it proves the view is reachable, *not* that the second branch has
+  rows. Test each branch with an explicit `ObjType` filter before trusting it.
+- **Internal vs external key format.** Both sides must use the same
+  representation. A numeric supplier stored as `0000001000` will not match a
+  consumer sending `1000`, and the consumer will confidently report "not defined
+  in SAP" for a record that exists — worse than returning "unknown" (see
+  `read-only-consumption.md` §9). Verify with a numeric key, not just an
+  alphanumeric one.

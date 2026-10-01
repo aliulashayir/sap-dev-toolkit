@@ -9,6 +9,18 @@ hook — front-loading the gotchas that otherwise cost a debugging session each:
 `$metadata`, RAP write semantics, the Cloud SDK error/pagination/CSRF details, UI binding
 at the type boundary, and a symptom → cause → fix map for the common 400/404/412 failures.
 
+It also covers the two shapes beyond the edit form, where the failures are quieter:
+
+- **Writing the provider side** — ABAP Cloud, custom entities and query providers,
+  exposing existing DDIC tables, reading INDX cluster payloads, publishing and
+  transporting a service binding, and OData V4 authorization (`S_START`, not `S_SERVICE`).
+- **Read-only consumption at volume** — dashboards and error monitors, where the
+  characteristic bug returns a plausible number instead of an error: `$top` silently
+  capping a pull, `$apply` 501s and the starvation trap in the obvious fallback, a stale
+  window reading as "no errors".
+- **Shipping it** — MTA descriptors, approuter, XSUAA tenant mode and the
+  `TENANT_HOST_PATTERN` trap that leaves the app `RUNNING` with login broken.
+
 ## What's inside
 
 ```text
@@ -20,6 +32,10 @@ plugins/sap-dev-toolkit/
 │       ├── rap-write-semantics.md    # POST/PATCH/DELETE, composite keys, semantic pairing
 │       ├── cloud-sdk-bff.md          # Cloud SDK, error extraction, pagination, CSRF, auth
 │       ├── ui-binding.md             # type boundary, value-helps, validation
+│       ├── abap-cloud-rap-provider.md   # provider side: custom entities, INDX clusters,
+│       │                                #   CDS exposure, publishing, S_START
+│       ├── read-only-consumption.md     # dashboards/monitors: paging, $apply, stale windows
+│       ├── btp-mta-approuter.md         # MTA, approuter, XSUAA, Cloud Connector, routes
 │       └── advanced-topics.md        # drafts, $batch, $expand, actions/functions
 ├── commands/                         # slash commands (see below)
 ├── agents/                           # subagents (see below)

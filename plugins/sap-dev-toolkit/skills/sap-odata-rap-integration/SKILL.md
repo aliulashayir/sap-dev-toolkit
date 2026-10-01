@@ -12,9 +12,14 @@ description: >-
   status code 400", blank form fields, truncated value helps, or amounts/dates
   that save wrong. Reach for it even if the user only says "the save is
   failing", "the OData call errors", "wire this SAP service up", or names
-  RAP/CDS/Fiori/BTP without saying "OData". Captures gotchas that cost hours —
-  read it before writing the first line of integration code, not after the
-  first failure.
+  RAP/CDS/Fiori/BTP without saying "OData". Also covers the two shapes beyond
+  forms: READ-ONLY consumption at volume (dashboards, error monitors, log
+  analysis — paging, $apply/$count, stale windows, bulk lookups) and SHIPPING it
+  (MTA descriptors, approuter, XSUAA tenant mode, Cloud Connector, routes) —
+  reach for it on "the dashboard shows zero", "the deploy went to the wrong
+  place", or "login redirects to an error page". Captures gotchas that cost
+  hours — read it before writing the first line of integration code, not after
+  the first failure.
 ---
 
 # SAP OData V4 + RAP + Cloud SDK Integration
@@ -86,6 +91,17 @@ reference files.
 | `x.trim is not a function` (or similar) on save | A JSON *number* from the service reached string-parsing code | Normalize `Edm.Decimal` → string on read; make parsers accept `string \| number` — `ui-binding.md` |
 | Amount saved off by 1000× (or NaN) | Locale decimal parsing mismatch (e.g. `"12.000,50"` vs `"12000.5"`) | Parse locale-aware on write; keep read/write formats consistent — `ui-binding.md` |
 | 412 Precondition Required/Failed | Service wants an ETag (`If-Match`) for update/delete | Fetch the entity's ETag and send `If-Match` (or `*` if the service allows) |
+| A paged pull returns exactly your page size, every time | `$top` is a hard cap, not a page size — the server sent what you asked, so no `@odata.nextLink` | Page with `$skip`; verify once against `$count` — `read-only-consumption.md` |
+| `501 /IWBEP/CM_V4S_RUN/002` on an aggregate | The service does not implement `$apply` | Count per key with `$count` + `$top=0`; a single capped sweep **starves** low-volume keys to 0 — `read-only-consumption.md` |
+| 502 on a read that worked yesterday | `Accept-Language` forced a language with unmaintained short texts on some rows | Drop the header, take the comm user's default — `read-only-consumption.md` |
+| A filter returns 0 rows in one system, works in another | Key padding differs per system (`'030'` vs `'30'`); or a mandatory discriminator (module) was omitted | Query every spelling; never read "0" as "empty" without measuring — `read-only-consumption.md` |
+| 400 on a date filter, or dates compare wrong | The column is exposed as `abap.char(8)`, not `Edm.Date` — literals must be quoted | `Cdate ge '20260901'`; carry a flag on the contract — `read-only-consumption.md` |
+| `414 Request-URI Too Long` | A bulk `$filter` grew past ICM's URI limit | Chunk the keys (~50/request) — `read-only-consumption.md` |
+| `Resource not found for segment 'X'` while `$metadata` is 200 | The entity is not in the service definition's `expose` list (or the alias differs) | Add `expose`, activate, re-publish — `abap-cloud-rap-provider.md` §40 |
+| Service works in DEV, 404/empty in QA or PROD | Publish writes a **customizing** request; only the workbench one transported | Transport both; `/IWBEP/CACHE_CLEANUP` in the target — `abap-cloud-rap-provider.md` §40 |
+| 403 on the entity read, V4 service | `S_SERVICE` granted (that's V2) or `S_START` values hand-typed | `S_START` / `G4BA` / **service group**, derived from the PFCG role menu — `abap-cloud-rap-provider.md` §41 |
+| Login redirects to `…authentication….hana.ondemand.com` → "The URL does not reference a valid account" | `TENANT_HOST_PATTERN` is deriving a tenant subdomain that doesn't exist; app is `RUNNING`, only login is broken | Recreate XSUAA as `dedicated` from `xs-security.json`, remove the var, `cf unset-env` — `btp-mta-approuter.md` §5 |
+| Config removed from the descriptor, behaviour unchanged after deploy | MTA does not unset env vars you delete | `cf unset-env <app> <VAR> && cf restart` — `btp-mta-approuter.md` §3 |
 | CSRF 403 on a write | Missing/stale CSRF token | Cloud SDK auto-fetches it for write methods by default — don't disable `fetchCsrfToken`; if hand-rolling, GET with `x-csrf-token: fetch` first |
 
 ## Workflow: wiring a new entity to a create/update form
@@ -159,9 +175,36 @@ Read the one that matches what you're doing. Each is self-contained.
   turning a root entity into a composition child, and the objects the activation
   check never looks at: access controls (DCL), `sapObjectNodeType`, the service
   definition's `leadingEntity`, stale draft rows that lock Edit permanently, and
-  orphaned child data with no header row. Read before designing an S/4HANA Public
-  Cloud custom report, an outbound call from ABAP, or any change to a BO's
-  composition structure.
+  orphaned child data with no header row. And the **exposure** half (§38-42): the
+  four CDS rules that only fail at runtime when you put a view over an existing
+  DDIC table (`DATS` as `Edm.Date` 500s the *whole* response on one empty row),
+  reading an INDX cluster payload through a query provider (`IMPORT ... FROM
+  DATABASE`, Standard ABAP vs ABAP Cloud, the `_M` structure twin, incompatible
+  `IMPORT` additions), publish writing a **customizing** request so a
+  workbench-only transport leaves the service group empty, `S_START`/`G4BA` as
+  the V4 authorization object, and why one `union all` lookup view beats two.
+  Read before designing an S/4HANA Public Cloud custom report, exposing an
+  existing table, an outbound call from ABAP, or any change to a BO's composition
+  structure.
+
+- **`references/read-only-consumption.md`** — the other shape: pulling **volume**
+  out of SAP for dashboards, error monitors and log analysis, where nothing is
+  written back. `$top` as a cap not a page size, `$apply` 501 and the starvation
+  trap in the obvious fallback, `Accept-Language` 502s, shared log tables (module
+  filter, per-system key padding), date-as-string filters, anchoring the window to
+  the data instead of today, caching with single-flight, bulk existence checks
+  with chunking, why "couldn't ask" must not collapse into "doesn't exist",
+  reconstructing history instead of storing it, and never summing across
+  currencies. Read before building anything that reports rather than edits.
+
+- **`references/btp-mta-approuter.md`** — shipping it: MTA module names becoming
+  CF app names (give the plain one to the approuter), two full descriptors vs
+  base+extensions and the drift test that makes that safe, MTA not unsetting
+  removed env vars, pinning routes vs `${default-url}`, XSUAA `tenant-mode` and
+  the `TENANT_HOST_PATTERN` trap that starts the app and breaks login, why a
+  backend auth flag doesn't disable the approuter's login, Cloud Connector
+  virtual hosts and path scoping, "not authorized" on push being a stale token,
+  and keeping `.env` out of the archive. Read before the first deploy, not after.
 
 - **`references/advanced-topics.md`** — Less-common, high-surprise areas: draft-
   enabled RAP entities (`IsActiveEntity`, Edit/Activate/Discard lifecycle — a plain

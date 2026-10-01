@@ -9,7 +9,7 @@
     {
       "name": "sap-dev-toolkit",
       "source": "./plugins/sap-dev-toolkit",
-      "description": "Skill, commands, agents, and a hook for integrating a frontend/BFF with SAP OData V4 (RAP) via the SAP Cloud SDK for JavaScript, and binding into UI5/Fiori."
+      "description": "Skill, commands, agents and a hook for SAP OData V4 (RAP): consuming it from a frontend/BFF via the Cloud SDK, building the provider side in ABAP Cloud, read-only reporting at volume, and shipping it on BTP Cloud Foundry."
     }
   ]
 }
